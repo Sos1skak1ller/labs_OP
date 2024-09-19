@@ -27,7 +27,7 @@ void print_file_info(const char *name, struct stat *file_stat) {
     printf((file_stat->st_mode & S_IWOTH) ? "w" : "-");
     printf((file_stat->st_mode & S_IXOTH) ? "x" : "-");
     
-    printf(" %lu", file_stat->st_nlink);
+    printf(" %hu", file_stat->st_nlink);
     struct passwd *pw = getpwuid(file_stat->st_uid);
     struct group *gr = getgrgid(file_stat->st_gid);
     printf(" %s %s", pw->pw_name, gr->gr_name);
