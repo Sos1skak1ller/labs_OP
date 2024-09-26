@@ -34,10 +34,20 @@ void print_file_info(const char *fullpath, const char *name, struct stat *file_s
     // Количество жестких ссылок
     printf(" %3hu", file_stat->st_nlink);
 
-    // Имя владельца и группы
+    // Имя владельца и группы с проверкой
     struct passwd *pw = getpwuid(file_stat->st_uid);
+    if (pw) {
+        printf(" %-8s", pw->pw_name);
+    } else {
+        printf(" %-8u", file_stat->st_uid);
+    }
+
     struct group *gr = getgrgid(file_stat->st_gid);
-    printf(" %-5s %-6s", pw->pw_name, gr->gr_name);
+    if (gr) {
+        printf(" %-8s", gr->gr_name);
+    } else {
+        printf(" %-8u", file_stat->st_gid);
+    }
 
     // Размер файла
     printf(" %5lld", (long long)file_stat->st_size);
