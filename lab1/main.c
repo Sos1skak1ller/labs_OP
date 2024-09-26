@@ -10,7 +10,7 @@
 
 #define COLOR_DIR "\x1b[34m"   // Синий
 #define COLOR_EXEC "\x1b[32m"  // Зеленый
-#define COLOR_LINK "\x1b[36m"  // Бирюзовый
+#define COLOR_LINK "\x1b[35m"  // Розовый
 #define COLOR_RESET "\x1b[0m"  // Сброс цвета
 
 typedef struct {
