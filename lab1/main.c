@@ -7,6 +7,7 @@
 #include <grp.h>
 #include <time.h>
 #include <string.h>
+#include <ctype.h> 
 
 #define COLOR_DIR "\x1b[34m"   // Синий
 #define COLOR_EXEC "\x1b[32m"  // Зеленый
@@ -37,16 +38,16 @@ void print_file_info(const char *fullpath, const char *name, struct stat *file_s
     // Имя владельца и группы с проверкой
     struct passwd *pw = getpwuid(file_stat->st_uid);
     if (pw) {
-        printf(" %-8s", pw->pw_name);
+        printf(" %-5s", pw->pw_name);
     } else {
-        printf(" %-8u", file_stat->st_uid);
+        printf(" %-5u", file_stat->st_uid);
     }
 
     struct group *gr = getgrgid(file_stat->st_gid);
     if (gr) {
-        printf(" %-8s", gr->gr_name);
+        printf(" %-5s", gr->gr_name);
     } else {
-        printf(" %-8u", file_stat->st_gid);
+        printf(" %-5u", file_stat->st_gid);
     }
 
     // Размер файла
@@ -77,9 +78,28 @@ void print_file_info(const char *fullpath, const char *name, struct stat *file_s
     }
 }
 
+// Функция сравнения для сортировки в стиле ls
 int compare_files(const void *a, const void *b) {
     const file_info_t *fileA = (const file_info_t *)a;
     const file_info_t *fileB = (const file_info_t *)b;
+
+    // Если имена файлов начинаются с точки, сортируем их первыми
+    if (fileA->name[0] == '.' && fileB->name[0] != '.') {
+        return -1;
+    }
+    if (fileA->name[0] != '.' && fileB->name[0] == '.') {
+        return 1;
+    }
+
+    // Сравниваем строки, сначала по регистру (заглавные, потом строчные)
+    if (isupper(fileA->name[0]) && islower(fileB->name[0])) {
+        return -1;
+    }
+    if (islower(fileA->name[0]) && isupper(fileB->name[0])) {
+        return 1;
+    }
+
+    // Стандартное сравнение строк без учета регистра
     return strcasecmp(fileA->name, fileB->name);
 }
 
@@ -117,7 +137,7 @@ void list_directory(const char *path, int show_all, int long_list) {
         }
 
         // Считаем общее количество блоков
-        total_blocks += files[count].file_stat.st_blocks / 2; // 512-битные блоки
+        total_blocks += files[count].file_stat.st_blocks;
 
         count++;
     }
