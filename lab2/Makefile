@@ -1,12 +1,15 @@
-.PHONY: all clean run
+.PHONY: all clean
 
-all: ls
+CC = gcc
+CFLAGS = -Wall -Wextra
 
-ls: main.c
-	gcc main.c -o ls -Wall -Wextra
+all: mycat mygrep
 
-run: ls
-	./ls
+mycat: mycat.c
+	$(CC) $(CFLAGS) mycat.c -o mycat
+
+mygrep: mygrep.c
+	$(CC) $(CFLAGS) mygrep.c -o mygrep
 
 clean:
-	rm -rf *.o ls
+	rm -rf *.o mycat mygrep
