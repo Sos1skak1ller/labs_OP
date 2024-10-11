@@ -1,39 +1,52 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 
-void grep_pattern(FILE *file, const char *pattern) {
-    char line[1024];
-    while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, pattern)) {
+#define MAX_LINE_LEN 1024
+
+// Функция для поиска шаблона в строке
+int match_pattern(const char *line, const char *pattern) {
+    return strstr(line, pattern) != NULL;
+}
+
+// Основная функция для поиска шаблона в файле или потоке
+void grep_in_file(const char *pattern, FILE *file) {
+    char line[MAX_LINE_LEN];
+
+    // Читаем строки по одной и ищем совпадения
+    while (fgets(line, MAX_LINE_LEN, file) != NULL) {
+        if (match_pattern(line, pattern)) {
             printf("%s", line);
+            fflush(stdout);  // Сбрасываем буфер вывода
         }
     }
 }
 
 int main(int argc, char *argv[]) {
-    char *pattern = NULL;
-    char *filename = NULL;
-
-    if (argc == 2) {
-        pattern = argv[1];
-        grep_pattern(stdin, pattern);
-    } else if (argc == 3) {
-        pattern = argv[1];
-        filename = argv[2];
-    } else {
+    if (argc < 2) {
         fprintf(stderr, "Usage: %s pattern [file]\n", argv[0]);
         return 1;
     }
 
-    if (filename) {
-        FILE *file = fopen(filename, "r");
-        if (!file) {
-            perror("Error opening file");
+    const char *pattern = argv[1];
+    FILE *file = NULL;
+
+    // Проверка, есть ли файл в аргументах
+    if (argc == 3) {
+        file = fopen(argv[2], "r");
+        if (file == NULL) {
+            perror("fopen");
             return 1;
         }
+    } else {
+        // Если файл не указан, читаем данные из stdin (поддержка каналов)
+        file = stdin;
+    }
 
-        grep_pattern(file, pattern);
+    // Поиск шаблона в файле или stdin
+    grep_in_file(pattern, file);
+
+    if (file != stdin) {
         fclose(file);
     }
 
