@@ -2,8 +2,8 @@
 
 all: mychmod
 
-fork: main.c
-	gcc main.c -o fork -Wall -Wextra
+mychmod: main.c
+	gcc main.c -o mychmod -Wall -Wextra
 
 run: mychmod
 	./mychmod
