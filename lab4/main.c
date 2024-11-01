@@ -68,7 +68,5 @@ int main(int argc, char *argv[]) {
     const char *filepath = argv[2];
 
     change_permissions(mode, filepath);
-    printf("Права доступа к файлу '%s' изменены на '%s'.\n", filepath, mode);
-
     return EXIT_SUCCESS;
 }
