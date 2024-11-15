@@ -1,119 +1,183 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <time.h>
 #include <errno.h>
 
-#define BUFFER_SIZE 1024
+#define HEADER_SIZE 256
 
-void add_file_to_archive(const char *arch_name, const char *file_name) {
-    int arch_fd = open(arch_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+typedef struct {
+    char name[128];
+    mode_t mode;
+    off_t size;
+} FileHeader;
+
+void print_help() {
+    printf("Usage:\n");
+    printf("  ./archiver arch_name -i file1\n");
+    printf("  ./archiver arch_name -e file1\n");
+    printf("  ./archiver arch_name -s\n");
+    printf("  ./archiver -h\n");
+}
+
+void add_file_to_archive(const char *archive_name, const char *file_name) {
+    int arch_fd = open(archive_name, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (arch_fd < 0) {
-        perror("Failed to open archive");
+        perror("Error opening archive");
         return;
     }
 
     int file_fd = open(file_name, O_RDONLY);
     if (file_fd < 0) {
-        perror("Failed to open file");
+        perror("Error opening input file");
         close(arch_fd);
         return;
     }
 
-    struct stat file_stat;
-    if (fstat(file_fd, &file_stat) < 0) {
-        perror("Failed to get file stats");
+    struct stat st;
+    if (fstat(file_fd, &st) < 0) {
+        perror("Error getting file attributes");
         close(file_fd);
         close(arch_fd);
         return;
     }
 
-    write(arch_fd, &file_stat, sizeof(file_stat));
-    write(arch_fd, file_name, strlen(file_name) + 1);
+    FileHeader header;
+    memset(&header, 0, sizeof(FileHeader));
+    strncpy(header.name, file_name, sizeof(header.name) - 1);
+    header.mode = st.st_mode;
+    header.size = st.st_size;
 
-    char buffer[BUFFER_SIZE];
+    if (write(arch_fd, &header, sizeof(FileHeader)) != sizeof(FileHeader)) {
+        perror("Error writing file header");
+        close(file_fd);
+        close(arch_fd);
+        return;
+    }
+
+    char buffer[1024];
     ssize_t bytes_read;
-    while ((bytes_read = read(file_fd, buffer, BUFFER_SIZE)) > 0) {
-        write(arch_fd, buffer, bytes_read);
+    while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
+        if (write(arch_fd, buffer, bytes_read) != bytes_read) {
+            perror("Error writing file content");
+            close(file_fd);
+            close(arch_fd);
+            return;
+        }
+    }
+
+    if (bytes_read < 0) {
+        perror("Error reading file content");
     }
 
     close(file_fd);
     close(arch_fd);
 }
 
-void extract_file_from_archive(const char *arch_name, const char *file_name) {
-    int arch_fd = open(arch_name, O_RDWR);
+void extract_file_from_archive(const char *archive_name, const char *file_name) {
+    int arch_fd = open(archive_name, O_RDONLY);
     if (arch_fd < 0) {
-        perror("Failed to open archive");
+        perror("Error opening archive");
         return;
     }
 
-    struct stat file_stat;
-    char name_buffer[256];
-    ssize_t bytes_read;
-
-    while ((bytes_read = read(arch_fd, &file_stat, sizeof(file_stat))) > 0) {
-        read(arch_fd, name_buffer, sizeof(name_buffer));
-        if (strcmp(name_buffer, file_name) == 0) {
-            int out_fd = open(file_name, O_WRONLY | O_CREAT, file_stat.st_mode);
+    FileHeader header;
+    while (read(arch_fd, &header, sizeof(FileHeader)) == sizeof(FileHeader)) {
+        if (strcmp(header.name, file_name) == 0) {
+            int out_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, header.mode);
             if (out_fd < 0) {
-                perror("Failed to create output file");
+                perror("Error creating output file");
                 close(arch_fd);
                 return;
             }
 
-            char buffer[BUFFER_SIZE];
-            for (off_t i = 0; i < file_stat.st_size; i += BUFFER_SIZE) {
-                ssize_t to_read = (file_stat.st_size - i < BUFFER_SIZE) ? file_stat.st_size - i : BUFFER_SIZE;
-                read(arch_fd, buffer, to_read);
-                write(out_fd, buffer, to_read);
-            }
-            close(out_fd);
+            char buffer[1024];
+            ssize_t bytes_to_read = header.size;
+            while (bytes_to_read > 0) {
+                ssize_t chunk = read(arch_fd, buffer, (bytes_to_read > sizeof(buffer)) ? sizeof(buffer) : bytes_to_read);
+                if (chunk <= 0) {
+                    perror("Error reading file content");
+                    close(out_fd);
+                    close(arch_fd);
+                    return;
+                }
 
-            off_t pos = lseek(arch_fd, -((off_t) sizeof(file_stat) + strlen(name_buffer) + 1 + file_stat.st_size), SEEK_CUR);
-            ftruncate(arch_fd, pos);
-            break;
+                if (write(out_fd, buffer, chunk) != chunk) {
+                    perror("Error writing to output file");
+                    close(out_fd);
+                    close(arch_fd);
+                    return;
+                }
+                bytes_to_read -= chunk;
+            }
+
+            close(out_fd);
+            printf("File '%s' extracted successfully.\n", file_name);
+            close(arch_fd);
+            return;
         } else {
-            lseek(arch_fd, file_stat.st_size, SEEK_CUR);
+            lseek(arch_fd, header.size, SEEK_CUR);
         }
     }
 
+    printf("File '%s' not found in archive.\n", file_name);
     close(arch_fd);
 }
 
-void print_archive_stat(const char *arch_name) {
-    int arch_fd = open(arch_name, O_RDONLY);
+void print_archive_status(const char *archive_name) {
+    int arch_fd = open(archive_name, O_RDONLY);
     if (arch_fd < 0) {
-        perror("Failed to open archive");
+        perror("Error opening archive");
         return;
     }
 
-    struct stat file_stat;
-    char name_buffer[256];
-    ssize_t bytes_read;
-
-    while ((bytes_read = read(arch_fd, &file_stat, sizeof(file_stat))) > 0) {
-        read(arch_fd, name_buffer, sizeof(name_buffer));
-        printf("File: %s, Size: %ld bytes\n", name_buffer, file_stat.st_size);
-        lseek(arch_fd, file_stat.st_size, SEEK_CUR);
+    FileHeader header;
+    while (read(arch_fd, &header, sizeof(FileHeader)) == sizeof(FileHeader)) {
+        printf("File: %s, Size: %ld bytes, Mode: %o\n", header.name, header.size, header.mode);
+        lseek(arch_fd, header.size, SEEK_CUR);
     }
 
     close(arch_fd);
 }
 
 int main(int argc, char *argv[]) {
-    const char *arch_name = argv[1];
-    if (argc == 4 && (strcmp(argv[2], "-i") == 0 || strcmp(argv[2], "--input") == 0)) {
-        add_file_to_archive(arch_name, argv[3]);
-    } else if (argc == 4 && (strcmp(argv[2], "-e") == 0 || strcmp(argv[2], "--extract") == 0)) {
-        extract_file_from_archive(arch_name, argv[3]);
-    } else if (argc == 3 && (strcmp(argv[2], "-s") == 0 || strcmp(argv[2], "--stat") == 0)) {
-        print_archive_stat(arch_name);
-    } 
+    if (argc < 2) {
+        print_help();
+        return 1;
+    }
+
+    if (strcmp(argv[1], "-h") == 0) {
+        print_help();
+        return 0;
+    }
+
+    if (argc < 3) {
+        print_help();
+        return 1;
+    }
+
+    const char *archive_name = argv[1];
+    const char *command = argv[2];
+
+    if (strcmp(command, "-i") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Error: No input file specified.\n");
+            return 1;
+        }
+        add_file_to_archive(archive_name, argv[3]);
+    } else if (strcmp(command, "-e") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Error: No file to extract specified.\n");
+            return 1;
+        }
+        extract_file_from_archive(archive_name, argv[3]);
+    } else if (strcmp(command, "-s") == 0) {
+        print_archive_status(archive_name);
+    } else {
+        print_help();
+    }
 
     return 0;
 }
