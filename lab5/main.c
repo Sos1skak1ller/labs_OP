@@ -107,18 +107,13 @@ void print_archive_stat(const char *arch_name) {
 
 int main(int argc, char *argv[]) {
     const char *arch_name = argv[1];
-
-    if (argc == 3 && (strcmp(argv[2], "-h") == 0 || strcmp(argv[2], "--help") == 0)) {
-        print_help();
-    } else if (argc == 4 && (strcmp(argv[2], "-i") == 0 || strcmp(argv[2], "--input") == 0)) {
+    if (argc == 4 && (strcmp(argv[2], "-i") == 0 || strcmp(argv[2], "--input") == 0)) {
         add_file_to_archive(arch_name, argv[3]);
     } else if (argc == 4 && (strcmp(argv[2], "-e") == 0 || strcmp(argv[2], "--extract") == 0)) {
         extract_file_from_archive(arch_name, argv[3]);
     } else if (argc == 3 && (strcmp(argv[2], "-s") == 0 || strcmp(argv[2], "--stat") == 0)) {
         print_archive_stat(arch_name);
-    } else {
-        print_help();
-    }
+    } 
 
     return 0;
 }
