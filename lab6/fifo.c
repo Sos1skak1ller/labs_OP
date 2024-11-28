@@ -11,7 +11,7 @@
 int main() {
     pid_t pid;
     char buffer[256];
-    time_t parent_time;
+    time_t parent_time, child_time;
 
     if (mkfifo(FIFO_NAME, 0666) == -1) {
         perror("mkfifo");
@@ -24,30 +24,33 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    if (pid > 0) { // Родительский процесс
-        int fd = open(FIFO_NAME, O_WRONLY);
-        if (fd == -1) {
-            perror("open");
-            exit(EXIT_FAILURE);
-        }
-        parent_time = time(NULL);
-        char message[256];
-        snprintf(message, sizeof(message), "Parent PID: %d, Time: %s", getpid(), ctime(&parent_time));
-        write(fd, message, strlen(message) + 1);
-        close(fd);
-        sleep(5); // Ждем 5 секунд
-    } else { // Дочерний процесс
+    if (pid == 0) { // Дочерний процесс
         int fd = open(FIFO_NAME, O_RDONLY);
         if (fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
         }
-        time_t child_time = time(NULL);
+        child_time = time(NULL);
+        printf("Child PID: %d, Time: %s", getpid(), ctime(&child_time));
         read(fd, buffer, sizeof(buffer));
-        printf("Child PID: %d, Current Time: %s%s", getpid(), ctime(&child_time), buffer);
+        printf("%s", buffer);
+        close(fd);
+    } else { // Родительский процесс
+        int fd = open(FIFO_NAME, O_WRONLY);
+        if (fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+        sleep(5); 
+        parent_time = time(NULL);
+        char message[256];
+        snprintf(message, sizeof(message), "Parent PID: %d, Time: %s", getpid(), ctime(&parent_time));
+        write(fd, message, strlen(message) + 1);
         close(fd);
     }
 
-    unlink(FIFO_NAME);
+    if (pid > 0) { 
+        unlink(FIFO_NAME);
+    }
     return 0;
 }

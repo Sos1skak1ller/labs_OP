@@ -2,71 +2,77 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <errno.h>
-
-void change_permissions(const char *mode, const char *filepath) {
-    struct stat file_stat;
-
-    // Получаем текущие права доступа к файлу
-    if (stat(filepath, &file_stat) < 0) {
-        perror("Ошибка получения информации о файле");
-        exit(EXIT_FAILURE);
-    }
-
-    mode_t current_permissions = file_stat.st_mode;
-
-    // Обрабатываем режимы
-    if (mode[0] == '+') {
-        for (size_t i = 1; i < strlen(mode); i++) {
-            switch (mode[i]) {
-                case 'r':
-                    current_permissions |= S_IRUSR | S_IRGRP | S_IROTH;
-                    break;
-                case 'w':
-                    current_permissions |= S_IWUSR | S_IWGRP | S_IWOTH;
-                    break;
-                case 'x':
-                    current_permissions |= S_IXUSR | S_IXGRP | S_IXOTH;
-                    break;
-            }
-        }
-    } else if (mode[0] == '-') {
-        for (size_t i = 1; i < strlen(mode); i++) {
-            switch (mode[i]) {
-                case 'r':
-                    current_permissions &= ~(S_IRUSR | S_IRGRP | S_IROTH);
-                    break;
-                case 'w':
-                    current_permissions &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
-                    break;
-                case 'x':
-                    current_permissions &= ~(S_IXUSR | S_IXGRP | S_IXOTH);
-                    break;
-            }
-        }
-    } else {
-        // Установка прав в формате 766
-        int new_mode = strtol(mode, NULL, 8);
-        current_permissions = (current_permissions & ~S_IRWXU & ~S_IRWXG & ~S_IRWXO) | new_mode;
-    }
-
-    // Устанавливаем новые права доступа к файлу
-    if (chmod(filepath, current_permissions) < 0) {
-        perror("Ошибка изменения прав доступа к файлу");
-        exit(EXIT_FAILURE);
-    }
-}
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Использование: %s <mode> <file>\n", argv[0]);
-        return EXIT_FAILURE;
+        fprintf(stderr, "Usage: %s <mode> <file>\n", argv[0]);
+        return 1;
     }
 
     const char *mode = argv[1];
     const char *filepath = argv[2];
+    struct stat st;
+    mode_t current_permissions;
 
-    change_permissions(mode, filepath);
-    return EXIT_SUCCESS;
+    if (stat(filepath, &st) < 0) {
+        fprintf(stderr, "Error getting permissions for %s: %s\n",
+                filepath, strerror(errno));
+        return 1;
+    }
+
+    current_permissions = st.st_mode;
+
+    if (mode[0] == '+' || mode[0] == '-' || strchr(mode, '=') ||
+        (mode[0] == 'u' || mode[0] == 'g' || mode[0] == 'o' || mode[0] == 'a')) {
+        
+        char op = '\0';
+        mode_t chmod_mode = 0;
+        const char *p = mode;
+    
+        if (mode[0] == 'u' || mode[0] == 'g' || mode[0] == 'o' || mode[0] == 'a') {
+            p++;
+        }
+        
+        op = *p++;
+        
+        while (*p) {
+            switch (*p) {
+                case 'r': chmod_mode |= S_IRUSR | S_IRGRP | S_IROTH; break;
+                case 'w': chmod_mode |= S_IWUSR | S_IWGRP | S_IWOTH; break;
+                case 'x': chmod_mode |= S_IXUSR | S_IXGRP | S_IXOTH; break;
+            }
+            p++;
+        }
+
+        if (mode[0] == 'u') chmod_mode &= S_IRWXU;
+        else if (mode[0] == 'g') chmod_mode &= S_IRWXG;
+        else if (mode[0] == 'o') chmod_mode &= S_IRWXO;
+
+        if (op == '+') {
+            current_permissions |= chmod_mode;
+        } else if (op == '-') {
+            current_permissions &= ~chmod_mode;
+        } else if (op == '=') {
+            current_permissions = chmod_mode;
+        }
+    } else {
+        char *endptr;
+        long new_mode = strtol(mode, &endptr, 8);
+        
+        if (*endptr != '\0' || new_mode < 0 || new_mode > 0777) {
+            fprintf(stderr, "Error: Invalid octal mode %s\n", mode);
+            return 1;
+        }
+        
+        current_permissions = (current_permissions & ~(S_IRWXU | S_IRWXG | S_IRWXO)) | new_mode;
+    }
+
+    if (chmod(filepath, current_permissions) < 0) {
+        fprintf(stderr, "Error changing permissions for %s: %s\n", 
+                filepath, strerror(errno));
+        return 1;
+    }
+
+    return 0;
 }
