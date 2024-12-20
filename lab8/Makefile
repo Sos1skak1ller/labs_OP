@@ -4,7 +4,7 @@ CFLAGS = -Wall -pthread
 
 TARGET = main
 
-SRC = make.c
+SRC = main.c
 
 all: $(TARGET)
 
