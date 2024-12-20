@@ -59,5 +59,10 @@ int main() {
         exit(1);
     }
 
+    if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+        perror("shmctl");
+        exit(1);
+    }
+
     return 0;
 }

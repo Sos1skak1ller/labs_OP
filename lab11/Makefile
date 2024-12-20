@@ -1,12 +1,15 @@
-.PHONY: all clean run
+CC = gcc
 
-all: main
+CFLAGS = -Wall -pthread
 
-ls: main.c
-	gcc main.c -o main -Wall -Wextra
+TARGET = main
 
-run: main
-	./main
+SRC = make.c
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
-	rm -rf *.o main
+	rm -f $(TARGET)

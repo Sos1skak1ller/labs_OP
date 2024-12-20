@@ -1,12 +1,15 @@
-.PHONY: all clean run
+CC = gcc
 
-all: read_write
+CFLAGS = -Wall -pthread
 
-read_write: main.c
-	gcc main.c -o read_write -Wall -Wextra
+TARGET = main
 
-run: read_write
-	./read_write
+SRC = make.c
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
-	rm -rf *.o read_write
+	rm -f $(TARGET)

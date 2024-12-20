@@ -12,4 +12,4 @@ receiver: receiver.c
 	$(CC) $(CFLAGS) receiver.c -o receiver
 
 clean:
-	rm -rf *.o fifo pipe sender receiver
+	rm -rf *.o sender receiver

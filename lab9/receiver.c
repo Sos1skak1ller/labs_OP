@@ -12,13 +12,6 @@
 #define SEM_KEY_PATH "/tmp/sem_key"
 
 int main() {
-    int fd = open(SHM_KEY_PATH, O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-        perror("open SHM_KEY_PATH");
-        exit(1);
-    }
-    close(fd);
-
     key_t shm_key = ftok(SHM_KEY_PATH, 'a');
     if (shm_key == -1) {
         perror("ftok");
