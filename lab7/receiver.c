@@ -9,8 +9,28 @@
 
 #define SHM_SIZE 128
 #define SHM_KEY_PATH "/tmp/mem_key"
+#define LOCK_FILE "/tmp/sender.lock"
+
+int shmid;
+char *shmaddr;
+
+void cleanup() {
+    if (shmdt(shmaddr) == -1) {
+        perror("shmdt");
+    }
+
+    if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+        perror("shmctl");
+    }
+
+    if (remove(LOCK_FILE) == -1) {
+        perror("remove LOCK_FILE");
+    }
+}
 
 int main() {
+    atexit(cleanup);
+
     int fd = open(SHM_KEY_PATH, O_CREAT | O_RDWR, 0666);
     if (fd == -1) {
         perror("open SHM_KEY_PATH");
@@ -24,13 +44,13 @@ int main() {
         exit(1);
     }
 
-    int shmid = shmget(key, SHM_SIZE, 0666);
+    shmid = shmget(key, SHM_SIZE, 0666);
     if (shmid == -1) {
         perror("shmget");
         exit(1);
     }
 
-    char *shmaddr = shmat(shmid, NULL, 0);
+    shmaddr = shmat(shmid, NULL, 0);
     if (shmaddr == (char *)-1) {
         perror("shmat");
         exit(1);
@@ -44,11 +64,6 @@ int main() {
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&current_time));
         printf("Current Time: %s, PID: %d, Received: %s\n", time_str, pid, shmaddr);
         sleep(1);
-    }
-
-    if (shmdt(shmaddr) == -1) {
-        perror("shmdt");
-        exit(1);
     }
 
     return 0;

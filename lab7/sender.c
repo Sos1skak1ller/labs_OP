@@ -6,13 +6,14 @@
 #include <unistd.h>
 #include <time.h>
 #include <fcntl.h>
+#include <string.h>
 
 #define SHM_SIZE 128
 #define SHM_KEY_PATH "/tmp/mem_key"
 #define LOCK_FILE "/tmp/sender.lock"
 
 int main() {
-    // Create the lock file dynamically
+
     int lock_fd = open(LOCK_FILE, O_CREAT | O_RDWR, 0666);
     if (lock_fd == -1) {
         perror("open LOCK_FILE");
@@ -33,7 +34,7 @@ int main() {
         exit(1);
     }
 
-    int shmid = shmget(key, SHM_SIZE, 0666);
+    int shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666);
     if (shmid == -1) {
         perror("shmget");
         exit(1);
@@ -45,13 +46,11 @@ int main() {
         exit(1);
     }
 
-    pid_t pid = getpid();
-
     while (1) {
         time_t current_time = time(NULL);
         char time_str[64];
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&current_time));
-        printf("Current Time: %s, PID: %d, Received: %s\n", time_str, pid, shmaddr);
+        snprintf(shmaddr, SHM_SIZE, "Current Time: %s", time_str);
         sleep(1);
     }
 
