@@ -69,8 +69,7 @@ int main() {
 		pthread_join(readers[i], NULL);
 	}
 
-	pthread_mutex_destroy(&myMutex);
-	pthread_cond_destroy(&cond);
+
 
 	return 0;
 }
