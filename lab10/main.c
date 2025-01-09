@@ -1,75 +1,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <string.h>
 #include <unistd.h>
 
-#define ARRAY_SIZE 10
+#define ARRAY_SIZE 256
 #define NUM_READERS 10
 
-int sharedArray[ARRAY_SIZE];
-int writeCounter = 0;
-pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
+char shared_array[ARRAY_SIZE];
+int record_counter = 0;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-int dataReady = 0;
+int updated = 0;
 
-void* writerThread(void* arg) {
-	while (1) {
-		pthread_mutex_lock(&myMutex);
-
-		sharedArray[writeCounter % ARRAY_SIZE] = writeCounter;
-		writeCounter++;
-
-		dataReady = 1;
-		pthread_cond_broadcast(&cond);
-
-		pthread_mutex_unlock(&myMutex);
-
-		sleep(2);
-	}
-
-	return NULL;
+void* writer_thread(void* arg) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+        snprintf(shared_array, ARRAY_SIZE, "Record %d", record_counter++);
+        updated = 1;
+        pthread_cond_broadcast(&cond);
+        pthread_mutex_unlock(&mutex);
+        sleep(1); 
+    }
+    return NULL;
 }
 
-void* readerThread(void* arg) {
-	long tid = (long)arg;
+void* reader_thread(void* arg) {
+    long tid = (long)arg;
 
-	while (1) {
-		pthread_mutex_lock(&myMutex);
-
-		while (!dataReady) {
-			pthread_cond_wait(&cond, &myMutex);
-		}
-
-		printf("Reader %ld, tid: %lx, array: [", tid, pthread_self());
-		for (int i = 0; i < ARRAY_SIZE; i++) {
-			printf("%d ", sharedArray[i]);
-		}
-		printf("]\n");
-
-		dataReady = 0;
-
-		pthread_mutex_unlock(&myMutex);
-	}
-
-	return NULL;
+    while (1) {
+        pthread_mutex_lock(&mutex);
+        pthread_cond_wait(&cond, &mutex);
+        printf("Reader %ld: %s\n", tid, shared_array);
+        pthread_mutex_unlock(&mutex);
+    }
+    return NULL;
 }
 
 int main() {
-	pthread_t writer, readers[NUM_READERS];
+    pthread_t readers[NUM_READERS];
+    pthread_t writer;
+    if (pthread_create(&writer, NULL, writer_thread, NULL) != 0) {
+        perror("Failed to create writer thread");
+        return EXIT_FAILURE;
+    }
+    for (long i = 0; i < NUM_READERS; i++) {
+        if (pthread_create(&readers[i], NULL, reader_thread, (void*)i) != 0) {
+            perror("Failed to create reader thread");
+            return EXIT_FAILURE;
+        }
+    }
 
-	pthread_create(&writer, NULL, writerThread, NULL);
-
-	for (long i = 0; i < NUM_READERS; i++) {
-		pthread_create(&readers[i], NULL, readerThread, (void*)i);
-	}
-
-	pthread_join(writer, NULL);
-
-	for (long i = 0; i < NUM_READERS; i++) {
-		pthread_join(readers[i], NULL);
-	}
-
-
-
-	return 0;
+    pthread_join(writer, NULL);
+    for (int i = 0; i < NUM_READERS; i++) {
+        pthread_join(readers[i], NULL);
+    }
+	
+    return EXIT_SUCCESS;
 }
