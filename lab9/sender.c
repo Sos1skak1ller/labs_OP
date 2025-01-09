@@ -1,122 +1,130 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
-#include <unistd.h>
+#include <sys/stat.h>
 #include <fcntl.h>
-#include <time.h>
-#include <signal.h>
+#include <sys/file.h>
+#include <errno.h>
+#include <string.h>
 
-#define SHM_SIZE 128
-#define LOCK_FILE "/tmp/sendersemaphor.lock"
-#define SHM_KEY_PATH "/tmp/memsemaphor_key"
-#define SEM_KEY_PATH "/tmp/semaphor_key"
+#define SHM_SIZE 256
+#define LOCKFILE "./sender.lock"
+#define SHMFILE "./shmfile"
+#define SEMFILE "./semfile"
 
-int lock_fd;
-int shmid;
-int semid;  
-
-void cleanup() {
-    close(lock_fd);
-    unlink(LOCK_FILE);
-
-    if (shmctl(shmid, IPC_RMID, 0) == -1) {
-        perror("shmctl");
-    } else {
-        printf("Shared memory removed\n");
-    }
-
-    if (semctl(semid, 0, IPC_RMID, 0) == -1) {
-        perror("semctl");
-    } else {
-        printf("Semaphore removed\n");
-    }
-
-    printf("Lock file removed\n");
+void get_current_time(char *buffer, size_t size) {
+    time_t now = time(NULL);
+    struct tm *time_info = localtime(&now);
+    strftime(buffer, size, "%Y-%m-%d %H:%M:%S", time_info);
 }
 
-void handle_signal(int signum) {
-    cleanup();
-    exit(0);
+void handle_existing_instance() {
+    printf("Передающий процесс уже запущен. Завершение.\n");
+    exit(EXIT_FAILURE);
+}
+
+void sem_operation(int semid, int op) {
+    struct sembuf sb = {0, op, 0};
+    if (semop(semid, &sb, 1) == -1) {
+        perror("Ошибка операции с семафором");
+        exit(EXIT_FAILURE);
+    }
 }
 
 int main() {
-    signal(SIGINT, handle_signal);
-    signal(SIGTERM, handle_signal);
-
-    int fd = open(SHM_KEY_PATH, O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-        perror("open");
-        exit(1);
-    }
-    close(fd);
-
-    lock_fd = open(LOCK_FILE, O_CREAT | O_RDWR, 0666);
+    int lock_fd = open(LOCKFILE, O_CREAT | O_RDWR, 0666);
     if (lock_fd == -1) {
-        perror("open lock file");
-        exit(1);
+        perror("Ошибка открытия lock-файла");
+        exit(EXIT_FAILURE);
     }
 
-    if (lockf(lock_fd, F_TLOCK, 0) == -1) {
-        printf("Sender already running. Exiting...\n");
-        exit(0);
+    if (flock(lock_fd, LOCK_EX | LOCK_NB) == -1) {
+        if (errno == EWOULDBLOCK) {
+            handle_existing_instance();
+        } else {
+            perror("Ошибка установки блокировки");
+            close(lock_fd);
+            exit(EXIT_FAILURE);
+        }
     }
 
-    key_t key = ftok(SHM_KEY_PATH, 'a');
-    if (key == -1) {
-        perror("ftok");
-        exit(1);
+    FILE *file = fopen(SHMFILE, "a");
+    if (!file) {
+        perror("Ошибка создания shmfile");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
+    }
+    fclose(file);
+    chmod(SHMFILE, 0666);
+
+    key_t shm_key = ftok(SHMFILE, 65);
+    key_t sem_key = ftok(SEMFILE, 66);
+    if (shm_key == -1 || sem_key == -1) {
+        perror("Ошибка ftok");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
     }
 
-    shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666);
+    int shmid = shmget(shm_key, SHM_SIZE, 0666 | IPC_CREAT);
     if (shmid == -1) {
-        perror("shmget");
-        exit(1);
+        perror("Ошибка shmget");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
     }
 
-    char *shmaddr = shmat(shmid, NULL, 0);
-    if (shmaddr == (char *)-1) {
-        perror("shmat");
-        exit(1);
+    char *shared_memory = (char *)shmat(shmid, NULL, 0);
+    if (shared_memory == (char *)(-1)) {
+        perror("Ошибка shmat");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
     }
 
-    key_t sem_key = ftok(SEM_KEY_PATH, 'b');
-    semid = semget(sem_key, 1, IPC_CREAT | 0666);
+    int semid = semget(sem_key, 1, 0666 | IPC_CREAT);
     if (semid == -1) {
-        perror("semget");
-        exit(1);
+        perror("Ошибка создания семафора");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
     }
 
-    struct sembuf sops;
+    if (semctl(semid, 0, SETVAL, 1) == -1) {
+        perror("Ошибка инициализации семафора");
+        close(lock_fd);
+        exit(EXIT_FAILURE);
+    }
 
-    pid_t pid = getpid();
+    printf("Передающий процесс запущен. PID: %d\n", getpid());
+
     while (1) {
-        sops.sem_num = 0;
-        sops.sem_op = -1;
-        sops.sem_flg = 0;
-        if (semop(semid, &sops, 1) == -1) {
-            perror("semop wait");
-            exit(1);
-        }
+        char time_buffer[64];
+        get_current_time(time_buffer, sizeof(time_buffer));
 
-        time_t current_time = time(NULL);
-        snprintf(shmaddr, SHM_SIZE, "Time: %sPID: %d", ctime(&current_time), pid);
+        sem_operation(semid, -1);
+        snprintf(shared_memory, SHM_SIZE, "PID: %d, Время: %s", getpid(), time_buffer);
+        sem_operation(semid, 1);
 
-        sops.sem_op = 1;  
-        if (semop(semid, &sops, 1) == -1) {
-            perror("semop signal");
-            exit(1);
-        }
-
-        sleep(1);
+        sleep(2); 
     }
 
-    if (shmdt(shmaddr) == -1) {
-        perror("shmdt");
-        exit(1);
+    shmdt(shared_memory);
+
+
+    if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+        perror("Ошибка удаления сегмента разделяемой памяти");
     }
+
+
+    if (semctl(semid, 0, IPC_RMID) == -1) {
+        perror("Ошибка удаления семафора");
+    }
+
+
+
+    close(lock_fd);
+    unlink(LOCKFILE);
 
     return 0;
 }

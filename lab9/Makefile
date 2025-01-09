@@ -1,15 +1,20 @@
 .PHONY: all clean
 
 CC = gcc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -std=c11
 
-all: sender receiver
+SEMFILE = semfile
+
+all: sender receiver $(SEMFILE)
+
+$(SEMFILE):
+	touch $(SEMFILE)
 
 sender: sender.c
-	$(CC) $(CFLAGS) sender.c -o sender
+	$(CC) $(CFLAGS) -o sender sender.c  -pthread
 
 receiver: receiver.c
-	$(CC) $(CFLAGS) receiver.c -o receiver
+	$(CC) $(CFLAGS) -o receiver receiver.c  -pthread
 
-clean:
-	rm -rf *.o sender receiver
+clean:	
+	rm -f sender receiver sender.lock shmfile $(SEMFILE)

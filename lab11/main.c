@@ -19,7 +19,7 @@ void* writerThread(void* arg) {
 
         pthread_rwlock_unlock(&rwlock);
 
-        sleep(2);
+        sleep(1);
     }
 
     return NULL;
@@ -57,7 +57,6 @@ int main() {
     for (long i = 0; i < NUM_READERS; i++) {
         pthread_join(readers[i], NULL);
     }
-
 
     return 0;
 }

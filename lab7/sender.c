@@ -1,68 +1,102 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <unistd.h>
-#include <time.h>
-#include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <errno.h>
 
-#define SHM_SIZE 128
-#define SHM_KEY_PATH "/tmp/mem_key"
-#define LOCK_FILE "/tmp/sender.lock"
+#define SHM_SIZE 256
+#define LOCKFILE "./sender.lock"
+#define SHMFILE "./shmfile"
+
+void get_current_time(char *buffer, size_t size) {
+    time_t now = time(NULL);
+    struct tm *time_info = localtime(&now);
+    strftime(buffer, size, "%Y-%m-%d %H:%M:%S", time_info);
+}
+
+void handle_existing_instance() {
+    printf("Передающий процесс уже запущен. Завершение.\n");
+    exit(EXIT_FAILURE);
+}
 
 int main() {
-
-    int lock_fd = open(LOCK_FILE, O_CREAT | O_RDWR, 0666);
+    int lock_fd = open(LOCKFILE, O_CREAT | O_RDWR, 0666);
     if (lock_fd == -1) {
-        perror("open LOCK_FILE");
-        exit(1);
+        perror("Ошибка открытия lock-файла");
+        exit(EXIT_FAILURE);
     }
-    close(lock_fd);
 
-    int fd = open(SHM_KEY_PATH, O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-        perror("open SHM_KEY_PATH");
-        exit(1);
+    if (flock(lock_fd, LOCK_EX | LOCK_NB) == -1) {
+        if (errno == EWOULDBLOCK) {
+            handle_existing_instance();
+        } else {
+            perror("Ошибка установки блокировки");
+            close(lock_fd);
+            exit(EXIT_FAILURE);
+        }
     }
-    close(fd);
 
-    key_t key = ftok(SHM_KEY_PATH, 'a');
+    FILE *file = fopen(SHMFILE, "a");
+    if (!file) {
+        perror("Ошибка создания shmfile");
+        close(lock_fd);
+        unlink(LOCKFILE);
+        exit(EXIT_FAILURE);
+    }
+    fclose(file);
+    chmod(SHMFILE, 0666);
+
+    key_t key = ftok(SHMFILE, 65);
     if (key == -1) {
-        perror("ftok");
-        exit(1);
+        perror("Ошибка ftok");
+        close(lock_fd);
+        unlink(LOCKFILE);
+        exit(EXIT_FAILURE);
     }
 
-    int shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666);
+    int shmid = shmget(key, SHM_SIZE, 0666 | IPC_CREAT);
     if (shmid == -1) {
-        perror("shmget");
-        exit(1);
+        perror("Ошибка shmget");
+        close(lock_fd);
+        unlink(LOCKFILE);
+        exit(EXIT_FAILURE);
     }
 
-    char *shmaddr = shmat(shmid, NULL, 0);
-    if (shmaddr == (char *)-1) {
-        perror("shmat");
-        exit(1);
+    char *shared_memory = (char *)shmat(shmid, NULL, 0);
+    if (shared_memory == (char *)(-1)) {
+        perror("Ошибка shmat");
+        close(lock_fd);
+        unlink(LOCKFILE);
+        exit(EXIT_FAILURE);
     }
+
+    printf("Передающий процесс запущен. PID: %d\n", getpid());
 
     while (1) {
-        time_t current_time = time(NULL);
-        char time_str[64];
-        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&current_time));
-        snprintf(shmaddr, SHM_SIZE, "Current Time: %s", time_str);
-        sleep(1);
+        char time_buffer[64];
+        get_current_time(time_buffer, sizeof(time_buffer));
+
+        snprintf(shared_memory, SHM_SIZE, "PID: %d, Время: %s", getpid(), time_buffer);
+
+        sleep(2);
     }
 
-    if (shmdt(shmaddr) == -1) {
-        perror("shmdt");
-        exit(1);
+    if (shmdt(shared_memory) == -1) {
+        perror("Ошибка отключения от разделяемой памяти");
     }
 
     if (shmctl(shmid, IPC_RMID, NULL) == -1) {
-        perror("shmctl");
-        exit(1);
+        perror("Ошибка удаления сегмента разделяемой памяти");
     }
+
+    close(lock_fd);
+    unlink(LOCKFILE);
 
     return 0;
 }

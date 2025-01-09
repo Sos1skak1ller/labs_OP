@@ -12,4 +12,4 @@ receiver: receiver.c
 	$(CC) $(CFLAGS) receiver.c -o receiver
 
 clean:
-	rm -rf *.o sender receiver
+	rm -f sender receiver sender.lock shmfile
